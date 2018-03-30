@@ -10,23 +10,23 @@ class ServerException(Exception):
 
 class BaseCase:
     @staticmethod
-    def handle_file(handler, full_path: Path):
+    def handle_file(request_handler, full_path_to_file: Path):
         try:
-            with open(full_path, 'r') as f:
+            with open(full_path_to_file, 'r') as f:
                 content = f.read()
-            handler.send_content(content)
+            request_handler.send_content(content)
         except IOError as msg:
-            msg = f"'{full_path}' cannot be read: {msg}"
-            handler.handle_error(msg)
+            msg = f"'{full_path_to_file}' cannot be read: {msg}"
+            request_handler.handle_error(msg)
 
     @staticmethod
-    def index_path(handler):
-        return handler.full_path / 'index.html'
+    def index_path(request_handler):
+        return request_handler.full_path / 'index.html'
 
-    def test(self, handler):
+    def test(self, request_handler):
         raise NotImplementedError
 
-    def act(self, handler):
+    def act(self, request_handler):
         raise NotImplementedError
 
 
@@ -35,11 +35,11 @@ class CaseNoFile(BaseCase):
     File or directory does not exist.
     """
 
-    def test(self, handler):
-        return not handler.full_path.exists()
+    def test(self, request_handler):
+        return not request_handler.full_path.exists()
 
-    def act(self, handler):
-        raise ServerException("f'{handler.path}' not found")
+    def act(self, request_handler):
+        raise ServerException("f'{request_handler.path}' not found")
 
 
 class CaseExistingFile(BaseCase):
@@ -47,11 +47,11 @@ class CaseExistingFile(BaseCase):
     File exists.
     """
 
-    def test(self, handler):
-        return handler.full_path.is_file()
+    def test(self, request_handler):
+        return request_handler.full_path.is_file()
 
-    def act(self, handler):
-        self.handle_file(handler=handler, full_path=handler.full_path)
+    def act(self, request_handler):
+        self.handle_file(request_handler=request_handler, full_path_to_file=request_handler.full_path)
 
 
 class CaseAlwaysFail(BaseCase):
@@ -59,11 +59,11 @@ class CaseAlwaysFail(BaseCase):
     Base case if nothing else worked.
     """
 
-    def test(self, handler):
+    def test(self, request_handler):
         return True
 
-    def act(self, handler):
-        raise ServerException("Unknown object '{0}'".format(handler.path))
+    def act(self, request_handler):
+        raise ServerException(f"Unknown object '{request_handler.path}'")
 
 
 class CaseDirectoryIndexFile(BaseCase):
@@ -71,11 +71,11 @@ class CaseDirectoryIndexFile(BaseCase):
     Serve index.html page if exists in directory.
     """
 
-    def test(self, handler):
-        return handler.full_path.is_dir() and self.index_path(handler).is_file()
+    def test(self, request_handler):
+        return request_handler.full_path.is_dir() and self.index_path(request_handler).is_file()
 
-    def act(self, handler):
-        self.handle_file(handler=handler, full_path=self.index_path(handler))
+    def act(self, request_handler):
+        self.handle_file(request_handler=request_handler, full_path_to_file=self.index_path(request_handler))
 
 
 class CaseDirectoryNoIndexFile(BaseCase):
@@ -83,11 +83,11 @@ class CaseDirectoryNoIndexFile(BaseCase):
     List contents of a directory.
     """
 
-    def test(self, handler):
-        return handler.full_path.is_dir() and not self.index_path(handler).is_file()
+    def test(self, request_handler):
+        return request_handler.full_path.is_dir() and not self.index_path(request_handler).is_file()
 
-    def act(self, handler):
-        handler.list_dir(full_path=handler.full_path)
+    def act(self, request_handler):
+        request_handler.list_directory_contents(full_path_to_directory=request_handler.full_path)
 
 
 class CaseCGIFile(BaseCase):
@@ -95,11 +95,11 @@ class CaseCGIFile(BaseCase):
     Run python server side and return the results.
     """
 
-    def test(self, handler):
-        return handler.full_path.is_file and str(handler.full_path).endswith('.py')
+    def test(self, request_handler):
+        return request_handler.full_path.is_file and str(request_handler.full_path).endswith('.py')
 
-    def act(self, handler):
-        handler.run_cgi(path_to_executable=handler.full_path)
+    def act(self, request_handler):
+        request_handler.run_cgi_script(path_to_executable=request_handler.full_path)
 
 
 class RequestHandler(http.server.BaseHTTPRequestHandler):
@@ -154,19 +154,19 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         except Exception as msg:
             self.handle_error(msg)
 
-    def run_cgi(self, path_to_executable: Path) -> None:
+    def run_cgi_script(self, path_to_executable: Path) -> None:
         cmd = "python " + str(path_to_executable)
         result = subprocess.run(cmd.split(' '), stdout=subprocess.PIPE)
         self.send_content(str(result.stdout))
 
-    def list_dir(self, full_path: Path) -> None:
+    def list_directory_contents(self, full_path_to_directory: Path) -> None:
         try:
-            entries = full_path.glob('**/*')
-            bullets = ['<li>{0}</li>'.format(e) for e in entries if not str(e).startswith('.')]
+            contents = full_path_to_directory.glob('**/*')
+            bullets = ['<li>{0}</li>'.format(file) for file in contents if not str(file).startswith('.')]
             page = self.directory_listing_page.format('\n'.join(bullets))
             self.send_content(page)
         except OSError as msg:
-            msg = "'{0}' cannot be listed: {1}".format(self.path, msg)
+            msg = f"'{self.path}' cannot be listed: {msg}"
             self.handle_error(msg)
 
     # Handle unknown objects.
