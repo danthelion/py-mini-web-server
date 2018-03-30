@@ -9,18 +9,14 @@ class ServerException(Exception):
 
 
 class BaseCase:
-    """
-    Parent for case handlers.
-    """
-
     @staticmethod
     def handle_file(handler, full_path: Path):
         try:
-            with open(full_path, 'r') as reader:
-                content = reader.read()
+            with open(full_path, 'r') as f:
+                content = f.read()
             handler.send_content(content)
         except IOError as msg:
-            msg = "'{0}' cannot be read: {1}".format(full_path, msg)
+            msg = f"'{full_path}' cannot be read: {msg}"
             handler.handle_error(msg)
 
     @staticmethod
@@ -43,7 +39,7 @@ class CaseNoFile(BaseCase):
         return not handler.full_path.exists()
 
     def act(self, handler):
-        raise ServerException("'{0}' not found".format(handler.path))
+        raise ServerException("f'{handler.path}' not found")
 
 
 class CaseExistingFile(BaseCase):
@@ -55,7 +51,7 @@ class CaseExistingFile(BaseCase):
         return handler.full_path.is_file()
 
     def act(self, handler):
-        self.handle_file(handler, handler.full_path)
+        self.handle_file(handler=handler, full_path=handler.full_path)
 
 
 class CaseAlwaysFail(BaseCase):
@@ -72,19 +68,19 @@ class CaseAlwaysFail(BaseCase):
 
 class CaseDirectoryIndexFile(BaseCase):
     """
-    Serve index.html page for a directory.
+    Serve index.html page if exists in directory.
     """
 
     def test(self, handler):
         return handler.full_path.is_dir() and self.index_path(handler).is_file()
 
     def act(self, handler):
-        self.handle_file(handler, self.index_path(handler))
+        self.handle_file(handler=handler, full_path=self.index_path(handler))
 
 
 class CaseDirectoryNoIndexFile(BaseCase):
     """
-    Serve index.html page for a directory.
+    List contents of a directory.
     """
 
     def test(self, handler):
@@ -96,14 +92,14 @@ class CaseDirectoryNoIndexFile(BaseCase):
 
 class CaseCGIFile(BaseCase):
     """
-    Something runnable.
+    Run python server side and return the results.
     """
 
     def test(self, handler):
         return handler.full_path.is_file and str(handler.full_path).endswith('.py')
 
     def act(self, handler):
-        handler.run_cgi(handler.full_path)
+        handler.run_cgi(path_to_executable=handler.full_path)
 
 
 class RequestHandler(http.server.BaseHTTPRequestHandler):
@@ -151,7 +147,6 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             for case in self.cases:
                 _case = case()
                 if _case.test(self):
-                    print(_case.__class__)
                     _case.act(self)
                     break
 
@@ -159,8 +154,8 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         except Exception as msg:
             self.handle_error(msg)
 
-    def run_cgi(self, full_path: Path) -> None:
-        cmd = "python " + str(full_path)
+    def run_cgi(self, path_to_executable: Path) -> None:
+        cmd = "python " + str(path_to_executable)
         result = subprocess.run(cmd.split(' '), stdout=subprocess.PIPE)
         self.send_content(str(result.stdout))
 
